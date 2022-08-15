@@ -4024,6 +4024,15 @@ int zoo_awget(zhandle_t *zh, const char *path,
                                                     watcher, watcherCtx
                                                 )
                                             );
+
+    /*
+     * // DS //
+     * - Queue the op into the to_send queue
+     * - flush_send_queue() reads from zh->to_send queue, sends the data to server
+     *   using send_buffer() -> zookeeper_send() (which can in turn use SSL_write()
+     *   if using secured channel)
+     *   - TODO - when flush_send_queue() happens?
+     */
     rc = rc < 0 ? rc : queue_buffer_bytes(&zh->to_send, get_buffer(oa), get_buffer_len(oa));
     leave_critical(zh);
     free_duplicate_path(server_path, path);
