@@ -4003,14 +4003,28 @@ int zoo_awget(zhandle_t *zh, const char *path,
         free_duplicate_path(server_path, path);
         return ZINVALIDSTATE;
     }
-    oa=create_buffer_oarchive();
+    oa = create_buffer_oarchive();
     rc = serialize_RequestHeader(oa, "header", &h);
     rc = rc < 0 ? rc : serialize_GetDataRequest(oa, "req", &req);
     enter_critical(zh);
-    rc = rc < 0 ? rc : add_data_completion(zh, h.xid, dc, data,
-    create_watcher_registration(server_path,data_result_checker,watcher,watcherCtx));
-    rc = rc < 0 ? rc : queue_buffer_bytes(&zh->to_send, get_buffer(oa),
-            get_buffer_len(oa));
+    /*
+     * // DS //
+     * - When called from zoo_get() -> zoo_wget() -> zoo_awget(), dc = SYNCHRONOUS_MARKER, data = sync_completion
+     * - create_watcher_registration() - creates a watcher registration object.
+     *      - the checker data_result_checker() returns the matching watcher hastable
+     *      - if the result is OK. checker() is called when activating a watcher in activateWatcher()
+     *      - that's where the actual watcher object gets created.
+     * - this watcher registration object is tied with the completion entry (completion_list_t->watcher)
+     * - queues a completion request into tail of zh->sent_requests (see add_completion/do_add_completion)
+     */
+    rc = rc < 0 ? rc : add_data_completion(zh, h.xid,
+                                                dc, data,
+                                                create_watcher_registration(
+                                                    server_path, data_result_checker,
+                                                    watcher, watcherCtx
+                                                )
+                                            );
+    rc = rc < 0 ? rc : queue_buffer_bytes(&zh->to_send, get_buffer(oa), get_buffer_len(oa));
     leave_critical(zh);
     free_duplicate_path(server_path, path);
     /* We queued the buffer, so don't free it */
