@@ -2533,6 +2533,12 @@ int zookeeper_interest(zhandle_t *zh, socket_t *fd, int *interest,
     }
     api_prolog(zh);
 
+    // DS //
+    // Check if need to reconfigure the server addresses
+    //  update_addrs() calls into resolve_hosts(zh, hosts, &resolved)
+    //  if the resolved address vector matches the existing hosts, no reconfiguring needed.
+    //  other it goes down the reconfigure path, closes the zsock and set the state to ZOO_NOTCONNECTED_STATE
+    //  closing the zsock resets zh->fd->sock to -1
     rc = update_addrs(zh, &now);
     if (rc != ZOK) {
         return api_epilog(zh, rc);
@@ -2543,6 +2549,21 @@ int zookeeper_interest(zhandle_t *zh, socket_t *fd, int *interest,
     tv->tv_sec = 0;
     tv->tv_usec = 0;
 
+    // DS //
+    // If connection hasn't been created or if reconfig needed on this handle, *fd will be -1 here.
+    // Below block attempts to create a new connection to the current ensemble
+    //  socket()
+    //  zookeeper_connect() - wrapper around nonblocking connect
+    //      if connect() could not be completed for any reason (non-blocking connect after all),
+    //      move the connection to ZOO_SSL_CONNECTING_STATE( or ZOO_CONNECTING_STATE for non-ssl connections)
+    //      rest of the processing in this function is mute if the connection is in this state.
+    //      most sections here operate only on connections in CONNECTED state.
+    //      If the connection is in ZOO_SSL_CONNECTING_STATE or ZOO_CONNECTING_STATE, we will set
+    //      interest to be ZOOKEEPER_WRITE (way below in this function).. later in check_events()
+    //      we check the socket options to make sure it is connected and then call init_ssl_for_handler()
+    //      to do the SSL_connect stuff.
+    //  init_ssl_for_handler()
+    //       if zookeeper_connect() succeeded, attempt to do SSL_connect processing.
     if (*fd == -1) {
         /*
          * If we previously failed to connect to server pool (zh->delay == 1)
@@ -3403,12 +3424,28 @@ int zookeeper_process(zhandle_t *zh, int events)
         return ZINVALIDSTATE;
     api_prolog(zh);
     IF_DEBUG(checkResponseLatency(zh));
+
+    // DS //
+    // If the connection is in ZOO_SSL_CONNECTING_STATE or ZOO_CONNECTING_STATE and events includes ZOOKEEPER_WRITE,
+    // check_events() takes care of completing the nonblocking connect (and do ssl_connect if secure connection).
+    // NOTE: ZOOKEEPER_WRITE implies any request that the client need to send to the server. Not just Set/Delete/Create types.
+    // if there are requests pending in zh->to_send queue, send them to the server
+    //      flush_send_queue()
+    //          -> send_buffer(zh, zh->to_send.head)
+    //              -> zookeeper_send()
+    //                  SSL_write() if ssl connection else send()
+    // if the socket is ready for READ as well, call recv_buffer() to read from the socket
+    //      recv_buffer()
+    //          -> zookeeper_recv()
+    //              -> SSL_read() if SSL connection else recv()
     rc = check_events(zh, events);
     if (rc!=ZOK)
         return api_epilog(zh, rc);
 
     IF_DEBUG(isSocketReadable(zh));
 
+    // DS //
+    // DOUBT: who populates zh->to_process?
     while (rc >= 0 && (bptr=dequeue_buffer(&zh->to_process))) {
         struct ReplyHeader hdr;
         struct iarchive *ia = create_buffer_iarchive(
@@ -4033,8 +4070,8 @@ int zoo_awget(zhandle_t *zh, const char *path,
      * - if close is already requested, adaptor_send_queue() will directly call flush_send_queue()
      * - flush_send_queue() reads from zh->to_send queue, sends the data to server using
      *   send_buffer() -> zookeeper_send() (which can in turn use SSL_write() if using secured channel)
-     * - DOUBT: wakeup_iothread() writes to adaptor_threads->self_pipe[1]. But no one seem to be polling
-     *   on that pipe. Something is missing.
+     * - wakeup_iothread() writes to adaptor_threads->self_pipe[1]. Other end of the pipe is self_pipe[0]
+     *   on which the do_io is polling on.
      */
     rc = rc < 0 ? rc : queue_buffer_bytes(&zh->to_send, get_buffer(oa), get_buffer_len(oa));
     leave_critical(zh);

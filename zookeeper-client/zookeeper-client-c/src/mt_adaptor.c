@@ -378,6 +378,15 @@ void *do_io(void *v)
 
         zh->io_count++;
 
+        // DS //
+        // Find what events we're interested in.
+        //      fd = zh->fd->sock
+        //      interest can be READ or READ & WRITE
+        //      interest = ZOOKEEPER_READ
+        //      interest = interest | ZOOKEEPER_WRITE if there are requests pending in zh->to_send queue
+        //                                  or if connection is CONNECTING or CONNECTED state
+        //      tv = some manipulation of time interval to wait based on the previous connection timing and stats. leaving this out for now.
+        // set the POLLING flag depending on the zookeeper_interest
         zookeeper_interest(zh, &fd, &interest, &tv);
         if (fd != -1) {
             fds[1].fd=fd;
@@ -387,11 +396,17 @@ void *do_io(void *v)
         }
         timeout=tv.tv_sec * 1000 + (tv.tv_usec/1000);
         
+        // DS //
+        // Poll for the self_pipe[0] fd and zh->fd->sock descriptors
         poll(fds,maxfd,timeout);
         if (fd != -1) {
             interest=(fds[1].revents&POLLIN)?ZOOKEEPER_READ:0;
             interest|=((fds[1].revents&POLLOUT)||(fds[1].revents&POLLHUP))?ZOOKEEPER_WRITE:0;
         }
+
+        // DS //
+        // read from the pipe to flush it out.
+        // NOTE: nonblocking_send() -> adaptor_send_queue() -> wakeup_io_thread() writes into self_pipe[1]
         if(fds[0].revents&POLLIN){
             // flush the pipe
             char b[128];
@@ -449,6 +464,8 @@ void *do_io(void *v)
         }
 
 #endif
+        // DS //
+        // Now that we determined what events we're interested in (READ or READ & WRITE), time to
         // dispatch zookeeper events
         zookeeper_process(zh, interest);
         // check the current state of the zhandle and terminate 
