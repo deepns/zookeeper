@@ -3445,13 +3445,18 @@ int zookeeper_process(zhandle_t *zh, int events)
     IF_DEBUG(isSocketReadable(zh));
 
     // DS //
-    // DOUBT: who populates zh->to_process?
+    // If there are read events to process, check_events() read from the buffer
+    // and queue them in zh->to_process queue. There is something about prime
+    // connection and prime buffer in check_events(). Ignoring it for now.
     while (rc >= 0 && (bptr=dequeue_buffer(&zh->to_process))) {
         struct ReplyHeader hdr;
         struct iarchive *ia = create_buffer_iarchive(
                                     bptr->buffer, bptr->curr_offset);
         deserialize_ReplyHeader(ia, "hdr", &hdr);
 
+        // DS //
+        // type of read events
+        //      PING, WATCHER_EVENT_XID, SET_WATCHES_XID, AUTH_XID
         if (hdr.xid == PING_XID) {
             // Ping replies can arrive out-of-order
             int elapsed = 0;
@@ -3475,11 +3480,19 @@ int zookeeper_process(zhandle_t *zh, int events)
             c = create_completion_entry(zh, WATCHER_EVENT_XID,-1,0,0,0,0);
             c->buffer = bptr;
             lock_watchers(zh);
+            // DS //
+            // Collect all the watchers for a given path, watching
+            // for specific watch_type. watcher_result carries the
+            // watcher object list.
             c->c.watcher_result = collectWatchers(zh, type, path);
             unlock_watchers(zh);
 
             // We cannot free until now, otherwise path will become invalid
             deallocate_WatcherEvent(&evt);
+
+            // DS //
+            // Queue the watcher events to zh->completions_to_process for
+            // the completion thread to deliver the watchers to the application.
             queue_completion(&zh->completions_to_process, c, 0);
         } else if (hdr.xid == SET_WATCHES_XID) {
             LOG_DEBUG(LOGCALLBACK(zh), "Processing SET_WATCHES");
@@ -3532,6 +3545,11 @@ int zookeeper_process(zhandle_t *zh, int events)
                 zh->last_zxid = hdr.zxid;
             }
             lock_watchers(zh);
+            // DS //
+            // activateWatcher() inserts the watcher into the hashtable pointed
+            // by data_result_checker (typically active_node_watchers list, but can be
+            // other watcher list too).
+            // NEXT: How watchers are delivered?
             activateWatcher(zh, cptr->watcher, rc);
             deactivateWatcher(zh, cptr->watcher_deregistration, rc);
             unlock_watchers(zh);

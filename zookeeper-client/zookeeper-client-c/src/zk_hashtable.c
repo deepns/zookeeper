@@ -225,7 +225,7 @@ static int insert_watcher_object(zk_hashtable *ht, const char *path,
     return res;
 }
 
-static void copy_watchers(watcher_object_list_t *from, watcher_object_list_t *to, int clone)
+static void -copy_watchers(watcher_object_list_t *from, watcher_object_list_t *to, int clone)
 {
     watcher_object_t* wo=from->head;
     while(wo){
