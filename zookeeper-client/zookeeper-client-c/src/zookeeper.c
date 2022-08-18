@@ -3233,6 +3233,16 @@ static void deserialize_response(zhandle_t *zh, int type, int xid, int failed, i
         } else {
             struct GetDataResponse res;
             deserialize_GetDataResponse(ia, "reply", &res);
+            // DS //
+            // data_result points to the data_completion given to the get function
+            // for e.g zoo_wget() passes SYNCHRONOUS_MARKER as the data completion when 
+            // calling zoo_awget().
+            // rc=zoo_awget(zh, path, watcher, watcherCtx, SYNCHRONOUS_MARKER, sc);
+            // :DOUBT:
+            // SYNCHRONOUS_MARKER is defined as
+            // 289: static void *SYNCHRONOUS_MARKER = (void*)&SYNCHRONOUS_MARKER;
+            // what is the point of this? this doesn't make sense!
+            // what it is really calling?
             cptr->c.data_result(rc, res.data.buff, res.data.len,
                     &res.stat, cptr->data);
             deallocate_GetDataResponse(&res);
@@ -3362,6 +3372,13 @@ void process_completions(zhandle_t *zh)
             LOG_DEBUG(LOGCALLBACK(zh), "Calling a watcher for node [%s], type = %d event=%s",
                        (evt.path==NULL?"NULL":evt.path), cptr->c.type,
                        watcherEvent2String(type));
+            // DS //
+            // deliver the notification to the application
+            // type says what for the watcher is. CREATED, DELETED, CHILD, SESSION_EVENT etc.
+            // cptr->c.watcher_result was populated with the result of collectWatchers()
+            // in the io thread when processing the buffers sent from the server.
+            // calls the callback associated with each watcher.
+            //  wo->watcher(zh,type,state,client_path,wo->context);
             deliverWatchers(zh,type,state,evt.path, &cptr->c.watcher_result);
             deallocate_WatcherEvent(&evt);
         } else {
@@ -3455,8 +3472,8 @@ int zookeeper_process(zhandle_t *zh, int events)
         deserialize_ReplyHeader(ia, "hdr", &hdr);
 
         // DS //
-        // type of read events
-        //      PING, WATCHER_EVENT_XID, SET_WATCHES_XID, AUTH_XID
+        // type of read events (read implies reading the messages from
+        // the server) - PING, WATCHER_EVENT_XID, SET_WATCHES_XID, AUTH_XID
         if (hdr.xid == PING_XID) {
             // Ping replies can arrive out-of-order
             int elapsed = 0;
@@ -3493,6 +3510,15 @@ int zookeeper_process(zhandle_t *zh, int events)
             // DS //
             // Queue the watcher events to zh->completions_to_process for
             // the completion thread to deliver the watchers to the application.
+            // queue_completion() takes lock on the given queue (completions_to_process)
+            // adds the completion 'c' into the queue and unlocks the lock. As part of
+            // unlocking, it also wakes up the threads waiting on the queue's conditional
+            // variable (completions_to_process.cond). This wakes up the completion thread
+            // which then calls process_completion() to process the events from completions_to_process.
+            //
+            // process_completions() looks into the buffer..deserialize it..finds out
+            // the header.xid is WATCHER_EVENT_XID (as seen here as well) and delivers
+            // the watcher. buffer will have the info of type and state of the watcher event.
             queue_completion(&zh->completions_to_process, c, 0);
         } else if (hdr.xid == SET_WATCHES_XID) {
             LOG_DEBUG(LOGCALLBACK(zh), "Processing SET_WATCHES");
@@ -3564,8 +3590,14 @@ int zookeeper_process(zhandle_t *zh, int events)
                         *sc = (struct sync_completion*)cptr->data;
                 sc->rc = rc;
 
+                // DS //
+                // This places the data and stat on to the buffer given from the application
+                // when calling zoo_ functions (e.g. zoo_wget)
                 process_sync_completion(zh, cptr, sc, ia);
 
+                // DS //
+                // Wake up the threads waiting on sync completion.
+                // for e.g. zoo_wget() calls zoo_awget() and then waits on this sync completion
                 notify_sync_completion(sc);
                 free_buffer(bptr);
                 zh->outstanding_sync--;
@@ -3635,7 +3667,7 @@ static void destroy_watcher_deregistration(watcher_deregistration_t *wdo) {
     }
 }
 
-static completion_list_t* create_completion_entry(zhandle_t *zh, int xid, int completion_type,
+static completion_list_t* –––create_completion_entry(zhandle_t *zh, int xid, int completion_type,
         const void *dc, const void *data,watcher_registration_t* wo, completion_head_t *clist)
 {
     return do_create_completion_entry(zh, xid, completion_type, dc, data, wo,
@@ -5272,6 +5304,9 @@ static void process_sync_completion(zhandle_t *zh,
         if (sc->rc==0) {
             struct GetDataResponse res;
             int len;
+            // DS //
+            // :DOUBT: where is the definition for these deserialze_XXX and
+            // deallocate_XXX functions?
             deserialize_GetDataResponse(ia, "reply", &res);
             if (res.data.len <= sc->u.data.buff_len) {
                 len = res.data.len;
@@ -5284,6 +5319,9 @@ static void process_sync_completion(zhandle_t *zh,
             if (len == -1) {
                 sc->u.data.buffer = NULL;
             } else {
+                // DS //
+                // sc->u.data.buffer points to the actual buffer given to zoo_wget()
+                // we copy the data from the response into the application buffer here.
                 memcpy(sc->u.data.buffer, res.data.buff, len);
             }
             sc->u.data.stat = res.stat;
