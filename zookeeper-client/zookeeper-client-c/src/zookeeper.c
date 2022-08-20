@@ -3667,7 +3667,7 @@ static void destroy_watcher_deregistration(watcher_deregistration_t *wdo) {
     }
 }
 
-static completion_list_t* –––create_completion_entry(zhandle_t *zh, int xid, int completion_type,
+static completion_list_t* reate_completion_entry(zhandle_t *zh, int xid, int completion_type,
         const void *dc, const void *data,watcher_registration_t* wo, completion_head_t *clist)
 {
     return do_create_completion_entry(zh, xid, completion_type, dc, data, wo,
@@ -5305,8 +5305,12 @@ static void process_sync_completion(zhandle_t *zh,
             struct GetDataResponse res;
             int len;
             // DS //
-            // :DOUBT: where is the definition for these deserialze_XXX and
-            // deallocate_XXX functions?
+            // Where is the definition for these deserialze_XXX and
+            // deallocate_XXX functions? From zookeeper_jute.
+            // serializing / deserializing zookeeper records.
+            // See https://zookeeper.apache.org/doc/r3.4.11/api/org/apache/jute/package-summary.html
+            // See https://github.com/apache/zookeeper/blob/master/zookeeper-jute/src/main/resources/zookeeper.jute
+            // jute definitions are generated separately.
             deserialize_GetDataResponse(ia, "reply", &res);
             if (res.data.len <= sc->u.data.buff_len) {
                 len = res.data.len;
