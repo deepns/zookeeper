@@ -3667,7 +3667,7 @@ static void destroy_watcher_deregistration(watcher_deregistration_t *wdo) {
     }
 }
 
-static completion_list_t* reate_completion_entry(zhandle_t *zh, int xid, int completion_type,
+static completion_list_t* create_completion_entry(zhandle_t *zh, int xid, int completion_type,
         const void *dc, const void *data,watcher_registration_t* wo, completion_head_t *clist)
 {
     return do_create_completion_entry(zh, xid, completion_type, dc, data, wo,
