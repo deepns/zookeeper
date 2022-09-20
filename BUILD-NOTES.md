@@ -220,3 +220,76 @@ org.apache.commons.exec.ExecuteException: Process exited with an error: 1 (Exit 
     at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:347)
 [INFO] --
 ```
+
+## Debian
+
+- Tried it on GCP Cloud Shell VM since it comes with all prerequisite packages
+- Pulled zookeeper repo
+- run the script `dev/docker/run.sh`, didn't realize that it didn't include the install command.
+
+```console
++ pushd /home/deepan_seeralan/github/zookeeper/dev/docker/../..
+~/github/zookeeper ~/github/zookeeper
+++ realpath /home/deepan_seeralan/github/zookeeper/dev/docker/../..
++ docker run -i -t --rm=true -w /home/deepan_seeralan/github/zookeeper/dev/docker/../.. -u deepan_seeralan -v /home/deepan_seeralan/github/zookeeper:/home/deepan_seeralan/github/zookeeper/dev/docker/../.. -v /home/deepan_seeralan:/home/deepan_seeralan zookeeper/dev-deepan_seer
+alan bash -c '
+echo
+echo '\''Welcome to Apache ZooKeeper Development Env'\''
+echo '\''To build, execute'\''
+echo '\''  mvn clean install'\''
+echo
+bash
+'
+mkdir: cannot create directory ‘/root’: Permission denied
+Can not write to /root/.m2/copy_reference_file.log. Wrong volume permissions? Carrying on ...
+
+Welcome to Apache ZooKeeper Development Env
+To build, execute
+  mvn clean install
+
+bash: /google/devshell/bashrc.google: No such file or directory
+```
+
+- but could see the container was built.
+
+```console
+deepan_seeralan@cloudshell:~$ docker images
+REPOSITORY                      TAG           IMAGE ID       CREATED          SIZE
+zookeeper/dev-deepan_seeralan   latest        3727bc4f1935   46 minutes ago   847MB
+zookeeper/dev                   latest        8e0f1ca74c32   46 minutes ago   847MB
+maven                           3.6.3-jdk-8   d1b3f61d61f2   16 months ago    525MB
+deepan_seeralan@cloudshell:~$
+```
+
+- then ran this command manually. ` docker run --rm -it -w /root/zk -v "$PWD:/root/zk" zookeeper/dev mvn clean install -Pfull-build -DskipTests`. That built successfully
+
+```console
+[INFO] Reactor Summary for Apache ZooKeeper 3.9.0-SNAPSHOT:
+[INFO]
+[INFO] Apache ZooKeeper ................................... SUCCESS [ 25.033 s]
+[INFO] Apache ZooKeeper - Documentation ................... SUCCESS [  3.064 s]
+[INFO] Apache ZooKeeper - Jute ............................ SUCCESS [ 19.537 s]
+[INFO] Apache ZooKeeper - Server .......................... SUCCESS [ 31.069 s]
+[INFO] Apache ZooKeeper - Metrics Providers ............... SUCCESS [  0.234 s]
+[INFO] Apache ZooKeeper - Prometheus.io Metrics Provider .. SUCCESS [  2.029 s]
+[INFO] Apache ZooKeeper - Client .......................... SUCCESS [  0.255 s]
+[INFO] Apache ZooKeeper - Client - C ...................... SUCCESS [ 29.712 s]
+[INFO] Apache ZooKeeper - Recipes ......................... SUCCESS [  0.285 s]
+[INFO] Apache ZooKeeper - Recipes - Election .............. SUCCESS [  0.693 s]
+[INFO] Apache ZooKeeper - Recipes - Lock .................. SUCCESS [  0.493 s]
+[INFO] Apache ZooKeeper - Recipes - Queue ................. SUCCESS [  0.531 s]
+[INFO] Apache ZooKeeper - Assembly ........................ SUCCESS [ 17.782 s]
+[INFO] Apache ZooKeeper - Compatibility Tests ............. SUCCESS [  0.365 s]
+[INFO] Apache ZooKeeper - Compatibility Tests - Curator ... SUCCESS [  1.652 s]
+[INFO] Apache ZooKeeper - Tests ........................... SUCCESS [  3.659 s]
+[INFO] Apache ZooKeeper - Contrib ......................... SUCCESS [  0.228 s]
+[INFO] Apache ZooKeeper - Contrib - Fatjar ................ SUCCESS [  5.548 s]
+[INFO] Apache ZooKeeper - Contrib - Loggraph .............. SUCCESS [  2.997 s]
+[INFO] Apache ZooKeeper - Contrib - Rest .................. SUCCESS [  3.586 s]
+[INFO] Apache ZooKeeper - Contrib - ZooInspector .......... SUCCESS [  8.550 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+```
+
+- able to make changes to the c-client and test it out with cli_mt tool.

@@ -2651,11 +2651,20 @@ int zookeeper_interest(zhandle_t *zh, socket_t *fd, int *interest,
     }
 
     if (zh->fd->sock != -1) {
+        // DS //
+        // last_recv is set in two places
+        //  1. when initiating a new connection
+        //  2. when we read some data from the socket buffer (set after a positive result from recv_buffer)
         int idle_recv = calculate_interval(&zh->last_recv, &now);
         int idle_send = calculate_interval(&zh->last_send, &now);
+
         int recv_to = zh->recv_timeout*2/3 - idle_recv;
         int send_to = zh->recv_timeout/3;
         // have we exceeded the receive timeout threshold?
+
+        // DS //
+        // If the connection is idle for more than 2/3 of the recv timeout and connection is still in CONNECTING state,
+        // then cut the losses and declare the connection timed out.
         if (recv_to <= 0 && zh->state != ZOO_SSL_CONNECTING_STATE) {
             // We gotta cut our losses and connect to someone else
 #ifdef _WIN32
@@ -3667,7 +3676,7 @@ static void destroy_watcher_deregistration(watcher_deregistration_t *wdo) {
     }
 }
 
-static completion_list_t* reate_completion_entry(zhandle_t *zh, int xid, int completion_type,
+static completion_list_t* create_completion_entry(zhandle_t *zh, int xid, int completion_type,
         const void *dc, const void *data,watcher_registration_t* wo, completion_head_t *clist)
 {
     return do_create_completion_entry(zh, xid, completion_type, dc, data, wo,
